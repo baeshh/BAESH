@@ -1,0 +1,326 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite" // 개발용 SQLite (프로덕션에서는 PostgreSQL 사용)
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  nickname  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile   UserProfile?
+  sessions  ChatSession[]
+  posts     Post[]
+  notifications Notification[]
+  postLikes PostLike[]
+  
+  // 팔로우 관계
+  following Follow[] @relation("UserFollowing")
+  followers Follow[] @relation("UserFollowers")
+  
+  // 프로젝트 관계
+  projects Project[]
+  projectTeamMembers ProjectTeamMember[]
+}
+
+model UserProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  nickname  String?
+  school    String?
+  major     String?
+  status    Json @default("[]") // JSON 배열로 저장
+  skills    Json? // { development: number, design: number, communication: number }
+  interests Json @default("[]") // JSON 배열로 저장
+  goals     String?
+  profilePhoto String? // 프로필 사진 (base64 또는 URL)
+  coverImage String? // 커버 이미지 (base64 또는 URL)
+  headline String? // 한 줄 소개
+  username String? // 사용자명
+  onboardingCompleted Boolean @default(false) // 온보딩 완료 여부
+
+  credentials  Credential[]
+  awards       Award[]
+  careers      Career[]
+  portfolios   Portfolio[]
+  organizations Organization[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Credential {
+  id        String   @id @default(cuid())
+  profileId String
+  profile   UserProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  name     String
+  issuer   String
+  verified Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+}
+
+model Award {
+  id        String   @id @default(cuid())
+  profileId String
+  profile   UserProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  name         String
+  organization String
+  year         String
+
+  createdAt DateTime @default(now())
+}
+
+model Career {
+  id        String   @id @default(cuid())
+  profileId String
+  profile   UserProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  company  String
+  role     String
+  period   String
+  verified Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+}
+
+model Portfolio {
+  id        String   @id @default(cuid())
+  profileId String
+  profile   UserProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  name        String
+  role        String
+  techStack   String
+  period      String
+  achievements String
+  verified    Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  profileId String
+  profile   UserProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  name     String
+  role     String?
+  verified Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+}
+
+model ChatSession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title     String
+  mode      String?  // "분석" | "코칭" | "네트워킹" | "정리"
+  summary   String?
+  messages  Json     // Array<{ role: string, text: string, timestamp: string }>
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title     String
+  content   String
+  tags      Json @default("[]") // JSON 배열로 저장
+  type      String   @default("lounge") // "lounge" | "networking" | "job"
+
+  likes     Int      @default(0)
+  comments  Comment[]
+  postLikes PostLike[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PostLike {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, postId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  userId    String
+  content   String
+
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type      String   // "lounge" | "networking" | "job" | "system"
+  title     String
+  message   String
+  link      String?  // 클릭 시 이동할 링크
+  read      Boolean  @default(false)
+  metadata  Json?    // 추가 데이터 (예: { activityId, userId, postId 등 })
+
+  createdAt DateTime @default(now())
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String   // 팔로우하는 사람
+  followingId String   // 팔로우받는 사람
+  
+  follower    User     @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  userId      String   // 프로젝트 생성자
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  title       String
+  description String
+  type        String   // "contest" | "sideProject" | "startup" | "research" | "hackathon" | "other"
+  startDate   String
+  endDate     String?
+  isOngoing   Boolean  @default(false)
+  tags        Json     @default("[]") // JSON 배열
+  status      String   @default("idea") // "idea" | "inProgress" | "completed" | "paused"
+  visibility  String   @default("public") // "public" | "linkShare" | "teamOnly"
+  
+  // AI 분석
+  aiSummary   String?
+  contributionAnalysis Json? // { planning: number, development: number, ... }
+  
+  // 성과
+  achievements Json? // { award: boolean, viewCount: number, userCount: number, revenue: number }
+  
+  // 관계
+  teamMembers ProjectTeamMember[]
+  milestones  ProjectMilestone[]
+  activityLogs ProjectActivityLog[]
+  tasks       ProjectTask[]
+  links       ProjectLink[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ProjectTeamMember {
+  id              String   @id @default(cuid())
+  projectId       String
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  role             String   // "planning" | "development" | "frontend" | "backend" | "ai" | "design" | "pm" | "marketing"
+  participationType String  // "invited" | "applied" | "approved"
+  teamRole         String   @default("member") // "owner" | "admin" | "member" | "guest"
+  projectRoles     Json     @default("[]") // JSON 배열
+  contributionRatio Int?    // 기여도 비율 (0-100)
+  
+  createdAt        DateTime @default(now())
+  
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+}
+
+model ProjectMilestone {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  title       String
+  description String?
+  completed   Boolean  @default(false)
+  dueDate     String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ProjectActivityLog {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  date        String
+  todayWork   String?
+  decisions   String?
+  issues      String?
+  links       Json     @default("[]") // JSON 배열
+  images      Json     @default("[]") // JSON 배열
+  
+  createdAt   DateTime @default(now())
+}
+
+model ProjectTask {
+  id            String   @id @default(cuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  title         String
+  description   String?
+  status        String   @default("todo") // "todo" | "doing" | "done"
+  assigneeId    String?
+  dueDate       String?
+  priority      String   @default("medium") // "low" | "medium" | "high"
+  evidenceLinks Json     @default("[]") // JSON 배열
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model ProjectLink {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  type        String   // "github" | "figma" | "notion" | "drive" | "other"
+  url         String
+  title       String
+  isPinned    Boolean  @default(false)
+  
+  createdAt   DateTime @default(now())
+}
+
+

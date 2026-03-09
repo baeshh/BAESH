@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+dist-ssr/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Database (backend)
+*.db
+*.db-journal
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+*.suo
+*.sw?
+
+# Prisma (optional: uncomment to ignore migrations)
+# baesh-career-backend/prisma/migrations/
