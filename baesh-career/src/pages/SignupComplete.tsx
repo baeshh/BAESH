@@ -16,7 +16,7 @@ export default function SignupComplete() {
           <style>{`@keyframes pulse { 0%{ transform: scale(1); opacity:.8 } 50%{ transform: scale(1.4); opacity:.4 } 100%{ transform: scale(1); opacity:.8 } }`}</style>
         </div>
         <div style={{ height: 12 }} />
-        <button className="button large" onClick={() => nav('/onboarding', { replace: true })}>온보딩으로 이동</button>
+        <button className="button large" onClick={() => nav('/profile', { replace: true })}>프로필로 이동</button>
         <div style={{ marginTop: 8, color: 'var(--muted)' }}>AI가 맞춤 추천을 준비 중이에요...</div>
       </div>
     </div>

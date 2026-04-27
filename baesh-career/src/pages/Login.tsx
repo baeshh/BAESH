@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { useInstitutionAuth } from "../auth/InstitutionAuthContext";
 import Modal from "../components/Modal";
-import { apiGet, apiPost } from "../utils/api";
+import { apiPost } from "../utils/api";
 import LanguageSelector from "../components/LanguageSelector";
-import { useTranslation } from "react-i18next";
 
 function validateEmail(v: string) {
   return /.+@.+\..+/.test(v);
@@ -12,7 +12,7 @@ function validateEmail(v: string) {
 
 export default function Login() {
   const { isAuthenticated, login } = useAuth();
-  const { t } = useTranslation();
+  const { login: instLogin } = useInstitutionAuth();
   const nav = useNavigate();
   const loc = useLocation() as ReturnType<typeof useLocation> & {
     state?: { from?: { pathname?: string } };
@@ -24,80 +24,47 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
   const [provider, setProvider] = useState<string | null>(null);
-  const [isInteracting, setIsInteracting] = useState(false);
   const [languageSelected, setLanguageSelected] = useState(() => {
-    return !!localStorage.getItem('baesh-language');
+    return !!localStorage.getItem("baesh-language");
   });
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
-
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationFrameRef = useRef<number>();
-  const isInteractingRef = useRef(false);
 
   const canSubmit = useMemo(
     () => validateEmail(email) && password.length >= 8,
     [email, password]
   );
 
-  // Font Awesome 로드
   useEffect(() => {
-    const link = document.createElement('link');
-    link.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css';
-    link.rel = 'stylesheet';
-    document.head.appendChild(link);
+    const fontAwesome = document.createElement("link");
+    fontAwesome.href = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css";
+    fontAwesome.rel = "stylesheet";
+
+    const pretendard = document.createElement("link");
+    pretendard.href = "https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css";
+    pretendard.rel = "stylesheet";
+
+    document.head.appendChild(fontAwesome);
+    document.head.appendChild(pretendard);
+
     return () => {
-      if (document.head.contains(link)) {
-        document.head.removeChild(link);
-      }
+      if (document.head.contains(fontAwesome)) document.head.removeChild(fontAwesome);
+      if (document.head.contains(pretendard)) document.head.removeChild(pretendard);
     };
   }, []);
 
-  // Google Fonts 로드
   useEffect(() => {
-    const link1 = document.createElement('link');
-    link1.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@700;800&display=swap';
-    link1.rel = 'stylesheet';
-    document.head.appendChild(link1);
-    return () => {
-      if (document.head.contains(link1)) {
-        document.head.removeChild(link1);
-      }
-    };
-  }, []);
-
-  // 반응형 처리
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 1024);
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  useEffect(() => {
-    const checkOnboardingAndRedirect = async () => {
+    const redirectAuthenticatedUser = () => {
       if (!isAuthenticated) return;
-      
+
       if (loc?.state?.from?.pathname) {
         nav(loc.state.from.pathname, { replace: true });
         return;
       }
-      
-      try {
-        const profile = await apiGet<{ onboardingCompleted?: boolean }>('/users/profile');
-        if (profile.onboardingCompleted) {
-          nav('/profile', { replace: true });
-        } else {
-          nav('/onboarding', { replace: true });
-        }
-      } catch (error) {
-        console.error('온보딩 상태 확인 실패:', error);
-        nav('/onboarding', { replace: true });
-      }
+
+      nav("/profile", { replace: true });
     };
-    
+
     if (isAuthenticated) {
-      checkOnboardingAndRedirect();
+      redirectAuthenticatedUser();
     }
   }, [isAuthenticated, nav, loc?.state?.from?.pathname]);
 
@@ -105,28 +72,20 @@ export default function Login() {
     e?.preventDefault();
     setError(null);
     setSubmitting(true);
-    
+
     try {
-      const data = await apiPost<{ token: string; user: { id: string; email: string; name: string } }>('/auth/login', {
-        email,
-        password,
-      });
+      const data = await apiPost<any>("/auth/unified-login", { email, password });
+
+      if (data.type === "institution") {
+        instLogin(data.token, data.institution);
+        nav("/institution/dashboard", { replace: true });
+        return;
+      }
 
       login(data.token, data.user);
-      try {
-        const profile = await apiGet<{ onboardingCompleted?: boolean }>('/users/profile');
-        if (profile.onboardingCompleted) {
-          nav('/profile', { replace: true });
-        } else {
-          nav('/onboarding', { replace: true });
-        }
-      } catch (error) {
-        console.error('온보딩 상태 확인 실패:', error);
-        nav('/onboarding', { replace: true });
-      }
+      nav("/profile", { replace: true });
     } catch (err: any) {
-      console.error('Login error:', err);
-      setError(err.message || '로그인에 실패했습니다.');
+      setError(err.message || "로그인에 실패했습니다.");
       setSubmitting(false);
     }
   };
@@ -140,610 +99,114 @@ export default function Login() {
     setConsentOpen(false);
     setSubmitting(true);
     setTimeout(async () => {
-      login('dummy-token', { id: 'user-oauth', email: 'oauth@example.com', name: 'OAuth User' });
-      try {
-        const profile = await apiGet<{ onboardingCompleted?: boolean }>('/users/profile');
-        if (profile.onboardingCompleted) {
-          nav('/profile', { replace: true });
-        } else {
-          nav('/onboarding', { replace: true });
-        }
-      } catch (error) {
-        console.error('온보딩 상태 확인 실패:', error);
-        nav('/onboarding', { replace: true });
-      }
+      login("dummy-token", { id: "user-oauth", email: "oauth@example.com", name: "OAuth User" });
+      nav("/profile", { replace: true });
     }, 600);
   };
 
-  // 파티클 애니메이션
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let width = isMobile ? window.innerWidth : window.innerWidth * 0.6;
-    let height = isMobile ? window.innerHeight * 0.4 : window.innerHeight;
-
-    const colors = ['#60A5FA', '#A855F7', '#EC4899', '#ffffff'];
-
-    class Particle {
-      x: number;
-      y: number;
-      baseSize: number;
-      size: number;
-      baseSpeedX: number;
-      baseSpeedY: number;
-      speedX: number;
-      speedY: number;
-      color: string;
-      baseAlpha: number;
-      alpha: number;
-
-      constructor() {
-        this.reset();
-      }
-
-      reset() {
-        this.x = Math.random() * width;
-        this.y = Math.random() * height;
-        this.baseSize = Math.random() * 2.5 + 0.5;
-        this.size = this.baseSize;
-        this.baseSpeedX = (Math.random() - 0.5) * 0.8;
-        this.baseSpeedY = (Math.random() - 0.5) * 0.8;
-        this.speedX = this.baseSpeedX;
-        this.speedY = this.baseSpeedY;
-        this.color = colors[Math.floor(Math.random() * colors.length)];
-        this.baseAlpha = Math.random() * 0.4 + 0.1;
-        this.alpha = this.baseAlpha;
-      }
-
-      update() {
-        const interacting = isInteractingRef.current;
-        if (interacting) {
-          this.speedX = this.baseSpeedX * 3;
-          this.speedY = this.baseSpeedY * 3;
-          this.size = Math.min(this.baseSize * 1.5, 5);
-          this.alpha = Math.min(this.baseAlpha * 2, 0.8);
-        } else {
-          this.speedX += (this.baseSpeedX - this.speedX) * 0.05;
-          this.speedY += (this.baseSpeedY - this.speedY) * 0.05;
-          this.size += (this.baseSize - this.size) * 0.05;
-          this.alpha += (this.baseAlpha - this.alpha) * 0.05;
-        }
-
-        this.x += this.speedX;
-        this.y += this.speedY;
-
-        if (this.x < 0) this.x = width;
-        if (this.x > width) this.x = 0;
-        if (this.y < 0) this.y = height;
-        if (this.y > height) this.y = 0;
-      }
-
-      draw() {
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-        ctx.fillStyle = this.color;
-        ctx.globalAlpha = this.alpha;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      }
-    }
-
-    let particles: Particle[] = [];
-
-    function resize() {
-      width = isMobile ? window.innerWidth : window.innerWidth * 0.6;
-      height = isMobile ? window.innerHeight * 0.4 : window.innerHeight;
-      canvas.width = width;
-      canvas.height = height;
-      init();
-    }
-
-    function init() {
-      particles = [];
-      const count = isMobile ? 80 : 150;
-      for (let i = 0; i < count; i++) {
-        particles.push(new Particle());
-      }
-    }
-
-    function drawConnections() {
-      const maxDistance = isInteractingRef.current ? 120 : 80;
-      ctx.lineWidth = isInteractingRef.current ? 0.8 : 0.4;
-      
-      for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-
-          if (dist < maxDistance) {
-            const opacity = (1 - dist / maxDistance) * (isInteractingRef.current ? 0.5 : 0.2);
-            ctx.beginPath();
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.strokeStyle = isInteractingRef.current 
-              ? `rgba(96, 165, 250, ${opacity})` 
-              : `rgba(255, 255, 255, ${opacity})`;
-            ctx.stroke();
-          }
-        }
-      }
-    }
-
-    function animate() {
-      ctx.fillStyle = isInteractingRef.current 
-        ? 'rgba(0, 0, 0, 0.2)' 
-        : 'rgba(0, 0, 0, 0.5)';
-      ctx.fillRect(0, 0, width, height);
-
-      particles.forEach(p => {
-        p.update();
-        p.draw();
-      });
-      
-      drawConnections();
-      animationFrameRef.current = requestAnimationFrame(animate);
-    }
-
-    resize();
-    animate();
-
-    let resizeTimer: NodeJS.Timeout;
-    const handleResize = () => {
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        resize();
-      }, 100);
-    };
-
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [isMobile]);
-
-  // 인터랙션 상태 동기화
-  useEffect(() => {
-    isInteractingRef.current = isInteracting;
-  }, [isInteracting]);
-
-  const startInteraction = () => setIsInteracting(true);
-  const endInteraction = () => setIsInteracting(false);
-
-  // 언어 선택 모달
   if (!languageSelected) {
     return (
-      <div style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100vw',
-        height: '100vh',
-        background: '#000000',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}>
-        <div style={{ maxWidth: 500, width: '100%', padding: '2rem' }}>
-          <LanguageSelector 
-            onLanguageSelected={(lang) => {
-              setLanguageSelected(true);
-            }}
-          />
+      <div className="language-shell">
+        <div className="language-card">
+          <LanguageSelector onLanguageSelected={() => setLanguageSelected(true)} />
         </div>
+        <style>{`
+          .language-shell {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #FAFAFC;
+          }
+          .language-card {
+            max-width: 500px;
+            width: 100%;
+            padding: 2rem;
+          }
+        `}</style>
       </div>
     );
   }
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: isMobile ? 'column' : 'row',
-      width: '100vw',
-      height: '100vh',
-      background: '#000000',
-      fontFamily: "'Inter', sans-serif",
-      overflow: 'hidden'
-    }}>
-      {/* 왼쪽 비주얼 영역 */}
-      <section style={{
-        position: 'relative',
-        width: isMobile ? '100%' : '60%',
-        height: isMobile ? '40%' : '100%',
-        overflow: 'hidden'
-      }}>
-        <canvas
-          ref={canvasRef}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%'
-          }}
-        />
-        <div style={{
-          position: 'absolute',
-          bottom: isMobile ? '2rem' : '4rem',
-          left: isMobile ? '2rem' : '4rem',
-          zIndex: 10,
-          pointerEvents: 'none'
-        }}>
-          <h2 style={{
-            fontSize: isMobile ? '2rem' : '3rem',
-            fontFamily: "'Manrope', sans-serif",
-            fontWeight: 800,
-            color: '#ffffff',
-            lineHeight: 1.2,
-            marginBottom: '1rem',
-            textShadow: '0 2px 4px rgba(0, 0, 0, 0.5)'
-          }}>
-            Welcome to<br />Your <span style={{
-              background: 'linear-gradient(135deg, #60A5FA 0%, #A855F7 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text'
-            }}>Project Core.</span>
-          </h2>
-          <p style={{
-            color: '#D1D5DB',
-            fontSize: isMobile ? '0.9rem' : '1.125rem',
-            maxWidth: '28rem',
-            textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)'
-          }}>
-            당신의 프로젝트가 곧 실력이 되고,<br />
+    <div className="login-page">
+      <div className="visual-panel">
+        <div className="ambient-orb orb-1" />
+        <div className="ambient-orb orb-2" />
+        <div className="glass-badge">✦ Connected Identity</div>
+        <div className="mini-card card-a">Skill Graph Ready</div>
+        <div className="mini-card card-b">Global Network</div>
+
+        <div className="visual-content">
+          <h1>
+            Welcome to
+            <br />
+            Your <span className="highlight-gradient">Project Core.</span>
+          </h1>
+          <p>
+            당신의 프로젝트가 곧 실력이 되고,
+            <br />
             그 실력이 글로벌 커리어로 연결됩니다.
           </p>
         </div>
-      </section>
+      </div>
 
-      {/* 오른쪽 입력 폼 영역 */}
-      <section style={{
-        width: isMobile ? '100%' : '40%',
-        height: isMobile ? '60%' : '100%',
-        background: 'rgba(10, 10, 12, 0.95)',
-        backdropFilter: 'blur(30px)',
-        borderLeft: isMobile ? 'none' : '1px solid rgba(255, 255, 255, 0.05)',
-        borderTop: isMobile ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        padding: isMobile ? '2rem' : '4rem',
-        position: 'relative',
-        zIndex: 20
-      }}>
-        <div style={{
-          maxWidth: '28rem',
-          width: '100%',
-          margin: '0 auto',
-          animation: 'fadeInUp 0.8s ease-out'
-        }}>
-          <div style={{ marginBottom: '3rem' }}>
-            <h1 style={{
-              fontFamily: "'Manrope', sans-serif",
-              fontSize: '1.875rem',
-              fontWeight: 700,
-              color: '#ffffff',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              marginBottom: '0.75rem'
-            }}>
-              <span style={{
-                width: '12px',
-                height: '12px',
-                borderRadius: '50%',
-                background: '#3B82F6',
-                animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
-              }} />
+      <div className="form-panel">
+        <div className="form-wrapper">
+          <div className="form-header">
+            <h2>
+              <span className="dot" />
               Connect Your Identity
-            </h1>
-            <p style={{ color: '#9CA3AF' }}>
-              프로젝트, 스킬, 그리고 글로벌 네트워크에 접속하세요.
-            </p>
+            </h2>
+            <p>프로젝트, 스킬, 그리고 글로벌 네트워크에 접속하세요.</p>
           </div>
 
           <form onSubmit={handleSubmit}>
-            <div style={{ position: 'relative', marginBottom: '1.5rem' }}>
+            <div className="input-group">
               <input
                 type="email"
-                placeholder="Email Address"
+                placeholder="Email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                onFocus={startInteraction}
-                onBlur={endInteraction}
                 required
-                style={{
-                  width: '100%',
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  padding: '1rem 1rem 1rem 3rem',
-                  borderRadius: '0.75rem',
-                  color: '#ffffff',
-                  fontSize: '0.95rem',
-                  transition: 'all 0.3s ease',
-                  outline: 'none'
-                }}
-                onFocus={(e) => {
-                  startInteraction();
-                  e.currentTarget.style.background = 'rgba(96, 165, 250, 0.05)';
-                  e.currentTarget.style.borderColor = '#60A5FA';
-                  e.currentTarget.style.boxShadow = '0 0 0 4px rgba(96, 165, 250, 0.1), 0 0 20px rgba(96, 165, 250, 0.1)';
-                }}
-                onBlur={(e) => {
-                  endInteraction();
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
               />
-              <i className="fa-solid fa-envelope" style={{
-                position: 'absolute',
-                left: '1rem',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: '#6B7280',
-                transition: 'color 0.3s ease',
-                pointerEvents: 'none'
-              }} />
             </div>
 
-            <div style={{ position: 'relative', marginBottom: '1.5rem' }}>
+            <div className="input-group">
               <input
                 type="password"
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                onFocus={startInteraction}
-                onBlur={endInteraction}
                 required
                 minLength={8}
-                style={{
-                  width: '100%',
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  padding: '1rem 1rem 1rem 3rem',
-                  borderRadius: '0.75rem',
-                  color: '#ffffff',
-                  fontSize: '0.95rem',
-                  transition: 'all 0.3s ease',
-                  outline: 'none'
-                }}
-                onFocus={(e) => {
-                  startInteraction();
-                  e.currentTarget.style.background = 'rgba(96, 165, 250, 0.05)';
-                  e.currentTarget.style.borderColor = '#60A5FA';
-                  e.currentTarget.style.boxShadow = '0 0 0 4px rgba(96, 165, 250, 0.1), 0 0 20px rgba(96, 165, 250, 0.1)';
-                }}
-                onBlur={(e) => {
-                  endInteraction();
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
-                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
               />
-              <i className="fa-solid fa-lock" style={{
-                position: 'absolute',
-                left: '1rem',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: '#6B7280',
-                transition: 'color 0.3s ease',
-                pointerEvents: 'none'
-              }} />
-              <Link
-                to="/forgot"
-                style={{
-                  position: 'absolute',
-                  right: '1rem',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  fontSize: '0.75rem',
-                  color: '#6B7280',
-                  textDecoration: 'none',
-                  transition: 'color 0.3s ease'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#60A5FA'}
-                onMouseLeave={(e) => e.currentTarget.style.color = '#6B7280'}
-              >
-                Forgot?
-              </Link>
+              <Link to="/forgot" className="forgot-link">Forgot?</Link>
             </div>
 
-            {error && (
-              <div style={{
-                padding: '0.75rem',
-                background: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                borderRadius: '0.5rem',
-                color: '#FCA5A5',
-                fontSize: '0.875rem',
-                marginBottom: '1.5rem'
-              }}>
-                {error}
-              </div>
-            )}
+            {error && <div className="login-error">{error}</div>}
 
-            <button
-              type="submit"
-              disabled={!canSubmit || submitting}
-              style={{
-                width: '100%',
-                padding: '1rem',
-                borderRadius: '0.75rem',
-                fontWeight: 700,
-                color: '#ffffff',
-                fontSize: '1.125rem',
-                marginBottom: '2rem',
-                background: 'linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%)',
-                border: 'none',
-                cursor: canSubmit && !submitting ? 'pointer' : 'not-allowed',
-                opacity: canSubmit && !submitting ? 1 : 0.5,
-                transition: 'all 0.3s ease',
-                position: 'relative',
-                overflow: 'hidden'
-              }}
-              onMouseEnter={(e) => {
-                if (canSubmit && !submitting) {
-                  e.currentTarget.style.boxShadow = '0 10px 25px -5px rgba(59, 130, 246, 0.5)';
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.boxShadow = 'none';
-                e.currentTarget.style.transform = 'translateY(0)';
-              }}
-            >
-              {submitting ? 'Entering...' : 'Enter the Project Network '}
-              {!submitting && <i className="fa-solid fa-arrow-right" style={{ marginLeft: '0.5rem', fontSize: '0.875rem' }} />}
+            <button type="submit" className="btn-submit" disabled={!canSubmit || submitting}>
+              {submitting ? "Entering..." : "Enter the Project Network →"}
             </button>
           </form>
 
-          <div style={{ textAlign: 'center' }}>
-            <p style={{
-              fontSize: '0.75rem',
-              color: '#6B7280',
-              textTransform: 'uppercase',
-              letterSpacing: '0.15em',
-              marginBottom: '1rem',
-              position: 'relative',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '0.75rem'
-            }}>
-              <span style={{ width: '2rem', height: '1px', background: 'rgba(31, 41, 55, 1)' }} />
-              Or connect via
-              <span style={{ width: '2rem', height: '1px', background: 'rgba(31, 41, 55, 1)' }} />
-            </p>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'center',
-              gap: '1rem',
-              marginBottom: '2rem'
-            }}>
-              <button
-                onClick={() => startOAuth("Google")}
-                style={{
-                  padding: '0.75rem',
-                  borderRadius: '50%',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease',
-                  color: '#9CA3AF'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.color = '#ffffff';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                  e.currentTarget.style.color = '#9CA3AF';
-                }}
-              >
-                <i className="fab fa-google" />
-              </button>
-              <button
-                onClick={() => startOAuth("GitHub")}
-                style={{
-                  padding: '0.75rem',
-                  borderRadius: '50%',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease',
-                  color: '#9CA3AF'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.color = '#ffffff';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                  e.currentTarget.style.color = '#9CA3AF';
-                }}
-              >
-                <i className="fab fa-github" />
-              </button>
-              <button
-                onClick={() => startOAuth("LinkedIn")}
-                style={{
-                  padding: '0.75rem',
-                  borderRadius: '50%',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease',
-                  color: '#9CA3AF'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.color = '#3B82F6';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                  e.currentTarget.style.color = '#9CA3AF';
-                }}
-              >
-                <i className="fab fa-linkedin-in" />
-              </button>
-            </div>
-            <p style={{ color: '#9CA3AF' }}>
-              New here?{' '}
-              <Link
-                to="/signup"
-                style={{
-                  color: '#60A5FA',
-                  fontWeight: 700,
-                  textDecoration: 'none',
-                  transition: 'color 0.3s ease'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#93C5FD'}
-                onMouseLeave={(e) => e.currentTarget.style.color = '#60A5FA'}
-              >
-                Create your project profile
-              </Link>
-            </p>
-            <div style={{ marginTop: '2rem' }}>
-              <button
-                onClick={() => nav("/preview")}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '0.5rem',
-                  color: '#9CA3AF',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease',
-                  fontSize: '0.875rem'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                  e.currentTarget.style.color = '#ffffff';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                  e.currentTarget.style.color = '#9CA3AF';
-                }}
-              >
-                {t('login.title') === 'Login' 
-                  ? 'Browse without logging in'
-                  : '로그인 없이 둘러보기'}
-              </button>
-            </div>
+          <div className="divider"><span>OR CONNECT VIA</span></div>
+
+          <div className="social-group">
+            <button className="social-btn" onClick={() => startOAuth("Google")}>G</button>
+            <button className="social-btn" onClick={() => startOAuth("GitHub")}>GH</button>
+            <button className="social-btn" onClick={() => startOAuth("LinkedIn")}>in</button>
           </div>
+
+          <div className="footer-links">
+            New here? <Link to="/signup">Create your project profile</Link>
+          </div>
+
+          <button className="btn-guest" onClick={() => nav("/preview")}>로그인 없이 둘러보기</button>
         </div>
-      </section>
+      </div>
 
       <Modal
         open={consentOpen}
@@ -751,44 +214,369 @@ export default function Login() {
         title={`데이터 수집 동의 (${provider ?? ""})`}
       >
         <p style={{ color: "var(--muted)" }}>
-          첫 소셜 로그인 시 프로필(이름/이메일/이미지)과 공개 활동 데이터를
-          불러옵니다. 개인화 추천을 위해 동의가 필요합니다.
+          첫 소셜 로그인 시 프로필(이름/이메일/이미지)과 공개 활동 데이터를 불러옵니다.
+          개인화 추천을 위해 동의가 필요합니다.
         </p>
-        <div
-          style={{
-            display: "flex",
-            gap: 8,
-            justifyContent: "flex-end",
-            marginTop: 12,
-          }}
-        >
-          <button className="badge" onClick={() => setConsentOpen(false)}>
-            취소
-          </button>
-          <button className="button" onClick={confirmOAuth}>
-            동의하고 계속
-          </button>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
+          <button className="badge" onClick={() => setConsentOpen(false)}>취소</button>
+          <button className="button" onClick={confirmOAuth}>동의하고 계속</button>
         </div>
       </Modal>
 
       <style>{`
-        @keyframes fadeInUp {
-          from {
-            opacity: 0;
-            transform: translateY(30px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+          font-family: 'Pretendard', sans-serif;
         }
 
-        @keyframes pulse {
-          0%, 100% {
-            opacity: 1;
+        .login-page {
+          background-color: #FAFAFC;
+          color: #191F28;
+          height: 100vh;
+          display: flex;
+          overflow: hidden;
+        }
+
+        .visual-panel {
+          flex: 1;
+          position: relative;
+          display: flex;
+          flex-direction: column;
+          justify-content: flex-end;
+          padding: 80px;
+          background: #FAFAFC;
+          overflow: hidden;
+        }
+
+        .ambient-orb {
+          position: absolute;
+          border-radius: 50%;
+          filter: blur(80px);
+          opacity: 0.6;
+          animation: pulse-orb 8s infinite alternate ease-in-out;
+        }
+
+        .orb-1 {
+          top: -10%;
+          left: -10%;
+          width: 50vw;
+          height: 50vw;
+          background: radial-gradient(circle, rgba(139,92,246,0.15), transparent 70%);
+        }
+
+        .orb-2 {
+          bottom: -20%;
+          right: -10%;
+          width: 60vw;
+          height: 60vw;
+          background: radial-gradient(circle, rgba(49,130,246,0.15), transparent 70%);
+          animation-delay: -4s;
+        }
+
+        .visual-content {
+          position: relative;
+          z-index: 10;
+        }
+
+        .visual-content h1 {
+          font-size: 4rem;
+          font-weight: 800;
+          line-height: 1.1;
+          letter-spacing: -0.03em;
+          margin-bottom: 24px;
+        }
+
+        .highlight-gradient {
+          background: linear-gradient(135deg, #3182F6 0%, #8B5CF6 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
+
+        .visual-content p {
+          font-size: 1.25rem;
+          font-weight: 500;
+          color: #6B7684;
+          line-height: 1.6;
+        }
+
+        .glass-badge,
+        .mini-card {
+          position: absolute;
+          background: rgba(255, 255, 255, 0.62);
+          border: 1px solid rgba(255, 255, 255, 0.9);
+          border-radius: 20px;
+          backdrop-filter: blur(12px);
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.04);
+          font-weight: 700;
+          z-index: 10;
+        }
+
+        .glass-badge {
+          top: 18%;
+          left: 12%;
+          padding: 16px 24px;
+          color: #3182F6;
+          animation: float 5s infinite alternate ease-in-out;
+        }
+
+        .mini-card {
+          padding: 14px 20px;
+          color: #4E5968;
+          font-size: 0.95rem;
+        }
+
+        .card-a {
+          top: 34%;
+          left: 18%;
+          animation: float 5.8s infinite alternate ease-in-out;
+        }
+
+        .card-b {
+          top: 28%;
+          left: 42%;
+          animation: float 6.4s infinite alternate-reverse ease-in-out;
+        }
+
+        .form-panel {
+          flex: 1;
+          max-width: 640px;
+          background: #FFFFFF;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 40px;
+          box-shadow: -20px 0 40px rgba(0,0,0,0.02);
+          z-index: 20;
+        }
+
+        .form-wrapper {
+          width: 100%;
+          max-width: 420px;
+        }
+
+        .form-header {
+          margin-bottom: 40px;
+        }
+
+        .form-header h2 {
+          font-size: 2rem;
+          font-weight: 700;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 12px;
+        }
+
+        .dot {
+          width: 12px;
+          height: 12px;
+          background: #3182F6;
+          border-radius: 50%;
+          box-shadow: 0 0 10px rgba(49, 130, 246, 0.4);
+        }
+
+        .form-header p {
+          color: #6B7684;
+          font-size: 1rem;
+          font-weight: 500;
+        }
+
+        .input-group {
+          position: relative;
+          margin-bottom: 16px;
+        }
+
+        .input-group input {
+          width: 100%;
+          padding: 18px 20px;
+          background: #F2F4F6;
+          border: 1px solid transparent;
+          border-radius: 16px;
+          font-size: 1rem;
+          font-weight: 500;
+          color: #191F28;
+          transition: all 0.2s;
+          outline: none;
+        }
+
+        .input-group input::placeholder {
+          color: #B0B8C1;
+        }
+
+        .input-group input:focus {
+          background: #FFFFFF;
+          border-color: #3182F6;
+          box-shadow: 0 0 0 4px rgba(49, 130, 246, 0.1);
+        }
+
+        .forgot-link {
+          position: absolute;
+          right: 20px;
+          top: 50%;
+          transform: translateY(-50%);
+          font-size: 0.875rem;
+          font-weight: 600;
+          color: #8B5CF6;
+          text-decoration: none;
+        }
+
+        .forgot-link:hover {
+          text-decoration: underline;
+        }
+
+        .login-error {
+          padding: 12px 14px;
+          background: #FEF2F2;
+          border: 1px solid #FECACA;
+          border-radius: 12px;
+          color: #DC2626;
+          font-size: 0.9rem;
+          margin-bottom: 16px;
+        }
+
+        .btn-submit {
+          width: 100%;
+          padding: 18px;
+          margin-top: 8px;
+          border: none;
+          border-radius: 16px;
+          background: linear-gradient(90deg, #3B82F6 0%, #D946EF 100%);
+          color: #FFFFFF;
+          font-size: 1.1rem;
+          font-weight: 700;
+          cursor: pointer;
+          transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
+          box-shadow: 0 8px 20px rgba(217, 70, 239, 0.2);
+        }
+
+        .btn-submit:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+          transform: none;
+        }
+
+        .btn-submit:not(:disabled):hover {
+          transform: translateY(-2px);
+          box-shadow: 0 12px 24px rgba(217, 70, 239, 0.3);
+        }
+
+        .divider {
+          display: flex;
+          align-items: center;
+          text-align: center;
+          margin: 32px 0;
+          color: #8B95A1;
+          font-size: 0.75rem;
+          font-weight: 600;
+          letter-spacing: 0.05em;
+        }
+
+        .divider::before,
+        .divider::after {
+          content: '';
+          flex: 1;
+          border-bottom: 1px solid #E5E8EB;
+        }
+
+        .divider span {
+          padding: 0 16px;
+        }
+
+        .social-group {
+          display: flex;
+          gap: 12px;
+          justify-content: center;
+          margin-bottom: 32px;
+        }
+
+        .social-btn {
+          width: 50px;
+          height: 50px;
+          border-radius: 50%;
+          background: #F2F4F6;
+          border: none;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 1rem;
+          font-weight: 800;
+          color: #4E5968;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .social-btn:hover {
+          background: #E5E8EB;
+          transform: translateY(-2px);
+        }
+
+        .footer-links {
+          text-align: center;
+          font-size: 0.95rem;
+          font-weight: 500;
+          color: #4E5968;
+        }
+
+        .footer-links a {
+          color: #3182F6;
+          font-weight: 700;
+          text-decoration: none;
+        }
+
+        .btn-guest {
+          display: block;
+          width: 100%;
+          padding: 16px;
+          margin-top: 24px;
+          background: transparent;
+          border: 1px solid #E5E8EB;
+          border-radius: 16px;
+          color: #4E5968;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+
+        .btn-guest:hover {
+          background: #F9FAFB;
+        }
+
+        @keyframes pulse-orb {
+          0% { transform: scale(1); opacity: 0.5; }
+          100% { transform: scale(1.1); opacity: 0.8; }
+        }
+
+        @keyframes float {
+          0% { transform: translateY(0); }
+          100% { transform: translateY(-15px); }
+        }
+
+        @media (max-width: 900px) {
+          .login-page {
+            flex-direction: column;
+            overflow: auto;
+            height: auto;
+            min-height: 100vh;
           }
-          50% {
-            opacity: 0.5;
+          .visual-panel {
+            flex: none;
+            padding: 60px 20px;
+            min-height: 40vh;
+          }
+          .visual-content h1 { font-size: 2.8rem; }
+          .form-panel {
+            flex: none;
+            max-width: 100%;
+            padding: 40px 20px;
+            box-shadow: none;
+            border-radius: 24px 24px 0 0;
+            margin-top: -24px;
+          }
+          .glass-badge,
+          .mini-card {
+            display: none;
           }
         }
       `}</style>
